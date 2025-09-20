@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Teachable Machine — Object Detection (Image Classification)</title>
+  <style>
+    :root { --bg:#0b1020; --card:#121833; --muted:#9aa3b2; --ok:#22c55e; --warn:#f59e0b; --bad:#ef4444; }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+      color: #e5e7eb; background: radial-gradient(1200px 800px at 70% -10%, #172554, #0b1020);
+      min-height: 100vh; display: grid; place-items: center; padding: 20px;
+    }
+    .app {
+      width: 100%; max-width: 980px; background: linear-gradient(180deg, #0f1530, #0c1228);
+      border: 1px solid rgba(255,255,255,0.08); border-radius: 20px; padding: 20px; box-shadow: 0 20px 80px rgba(0,0,0,.45);
+    }
+    h1 { margin: 0 0 12px; font-size: 1.25rem; letter-spacing:.2px; }
+    .row { display: grid; gap: 16px; grid-template-columns: 1fr; }
+    @media (min-width: 900px) { .row { grid-template-columns: 1.1fr .9fr; } }
+    .panel {
+      background: var(--card); border: 1px solid rgba(255,255,255,0.06);
+      border-radius: 16px; padding: 16px;
+    }
+    .controls { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+    .controls > * { flex: 0 0 auto; }
+    select, input[type="text"] {
+      background: #0c1330; color: #e5e7eb; border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 10px; padding: 10px 12px; min-width: 200px;
+    }
+    .btn {
+      background: #3b82f6; border: none; color: white; padding: 10px 14px;
+      border-radius: 12px; cursor: pointer; font-weight: 600;
+    }
+    .btn.secondary { background: #334155; }
+    .btn:disabled { opacity: .5; cursor: not-allowed; }
+    .chip { font-size:.85rem; color:#cbd5e1; background:#0b1433; border:1px solid rgba(255,255,255,0.08); padding:6px 10px; border-radius:999px; }
+    #webcam-wrap {
+      aspect-ratio: 1 / 1; width: 100%; background: #0a0f24; border-radius: 12px;
+      display: grid; place-items: center; overflow: hidden; border: 1px solid rgba(255,255,255,0.06);
+      position: relative;
+    }
+    #webcam-container canvas { width: 100% !important; height: auto !important; display:block; }
+    .status {
+      display:flex; gap:8px; align-items:center; color: var(--muted); font-size:.95rem;
+    }
+    .led { width:10px; height:10px; border-radius:50%; background:#475569; box-shadow:0 0 0 2px rgba(255,255,255,0.06) inset; }
+    .led.on { background:#22c55e; }
+    .predictions { display: grid; gap:10px; }
+    .pred {
+      background:#0b1433; border:1px solid rgba(255,255,255,0.06); border-radius:10px; padding:10px 12px;
+    }
+    .pred-top { display:flex; justify-content:space-between; gap:8px; font-weight:600; }
+    .bar { height:8px; background:#0f1a40; border-radius:999px; overflow:hidden; margin-top:8px; }
+    .bar > i { display:block; height:100%; width:0%; background: linear-gradient(90deg, #22d3ee, #3b82f6); }
+    .top1 { font-size: 1.1rem; font-weight: 700; }
+    .note { color:#93a3b8; font-size:.9rem; }
+    .footer { margin-top: 14px; color:#93a3b8; font-size:.85rem; display:flex; justify-content:space-between; gap:10px; flex-wrap:wrap; }
+    .kbd { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; background:#0b1433; border:1px solid rgba(255,255,255,0.08); padding:2px 6px; border-radius:6px; }
+    .hidden { display:none !important; }
+    .snapshot { max-width: 100%; border-radius: 10px; border:1px solid rgba(255,255,255,0.12); margin-top: 8px; }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <h1>Teachable Machine Image Model</h1>
+    <div class="row">
+      <!-- Left: Video -->
+      <section class="panel">
+        <div class="controls" style="margin-bottom:12px;">
+          <button id="btnStart" class="btn">Start</button>
+          <button id="btnStop" class="btn secondary" disabled>Stop</button>
+          <button id="btnSnap" class="btn secondary" disabled>Snapshot</button>
+          <span class="chip"><span id="led" class="led"></span> <span id="statusTxt" class="status-text">Idle</span></span>
+        </div>
+
+        <div class="controls" style="margin-bottom:12px;">
+          <label class="chip">Flip:
+            <input id="flipToggle" type="checkbox" checked style="vertical-align: middle; margin-left:8px;">
+          </label>
+          <select id="cameraSelect" title="เลือกกล้อง"></select>
+          <input id="modelUrl" type="text" placeholder="Model base URL (เช่น ./my_model/ )" value="./my_model/">
+        </div>
+
+        <div id="webcam-wrap">
+          <div id="webcam-container"></div>
+        </div>
+        <img id="snapshot" class="snapshot hidden" alt="Snapshot">
+        <div class="footer">
+          <span class="note">แนะนำให้รันผ่าน <span class="kbd">https://</span> หรือ <span class="kbd">http://localhost</span> เพื่ออนุญาตกล้อง</span>
+          <span class="note">โมเดลต้องมีไฟล์ <span class="kbd">model.json</span> และ <span class="kbd">metadata.json</span> ภายใต้โฟลเดอร์ที่ระบุ</span>
+        </div>
+      </section>
+
+      <!-- Right: Predictions -->
+      <section class="panel">
+        <div class="status" style="margin-bottom:10px;">
+          <div id="led2" class="led"></div>
+          <div>สถานะโมเดล: <strong id="modelState">Not loaded</strong></div>
+        </div>
+        <div id="top1" class="top1">Top-1: —</div>
+        <div id="label-container" class="predictions" style="margin-top:10px;"></div>
+      </section>
+    </div>
+  </div>
+
+  <!-- TFJS & TM libs -->
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest/dist/tf.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@latest/dist/teachablemachine-image.min.js"></script>
+
+  <script>
+    // ====== App State ======
+    let model, webcam, labelContainer, maxPredictions = 0, animId = null;
+    let devList = [], currentDeviceId = null;
+    const els = {
+      btnStart: document.getElementById('btnStart'),
+      btnStop: document.getElementById('btnStop'),
+      btnSnap: document.getElementById('btnSnap'),
+      cameraSelect: document.getElementById('cameraSelect'),
+      flipToggle: document.getElementById('flipToggle'),
+      modelUrl: document.getElementById('modelUrl'),
+      webcamContainer: document.getElementById('webcam-container'),
+      labelContainer: document.getElementById('label-container'),
+      top1: document.getElementById('top1'),
+      led: document.getElementById('led'),
+      led2: document.getElementById('led2'),
+      statusTxt: document.getElementById('statusTxt'),
+      modelState: document.getElementById('modelState'),
+      snapshot: document.getElementById('snapshot'),
+    };
+
+    // ====== UI Helpers ======
+    function setLive(on) {
+      els.led.classList.toggle('on', on);
+      els.led2.classList.toggle('on', on && !!model);
+      els.statusTxt.textContent = on ? 'Live' : 'Idle';
+      els.btnStart.disabled = on;
+      els.btnStop.disabled = !on;
+      els.btnSnap.disabled = !on;
+    }
+    function setModelState(text) { els.modelState.textContent = text; }
+    function setStatus(text) { els.statusTxt.textContent = text; }
+
+    function showError(e) {
+      console.error(e);
+      alert('เกิดข้อผิดพลาด: ' + (e?.message || e));
+    }
+
+    // ====== Camera enumeration ======
+    async function listCameras() {
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      devList = devices.filter(d => d.kind === 'videoinput');
+      els.cameraSelect.innerHTML = '';
+      devList.forEach((d, i) => {
+        const opt = document.createElement('option');
+        opt.value = d.deviceId;
+        opt.textContent = d.label || `Camera ${i+1}`;
+        els.cameraSelect.appendChild(opt);
+      });
+      if (devList.length === 0) {
+        const opt = document.createElement('option');
+        opt.textContent = 'ไม่พบกล้อง';
+        els.cameraSelect.appendChild(opt);
+      }
+      if (!currentDeviceId && devList[0]) currentDeviceId = devList[0].deviceId;
+      if (currentDeviceId) els.cameraSelect.value = currentDeviceId;
+    }
+
+    // ====== Bootstrap predictions list ======
+    function buildPredictionRows() {
+      els.labelContainer.innerHTML = '';
+      for (let i = 0; i < maxPredictions; i++) {
+        const row = document.createElement('div'); row.className = 'pred';
+        const top = document.createElement('div'); top.className = 'pred-top';
+        const name = document.createElement('div'); name.textContent = '—';
+        const prob = document.createElement('div'); prob.textContent = '0.00';
+        const bar = document.createElement('div'); bar.className = 'bar';
+        const fill = document.createElement('i');
+        bar.appendChild(fill); top.appendChild(name); top.appendChild(prob); row.appendChild(top); row.appendChild(bar);
+        els.labelContainer.appendChild(row);
+      }
+    }
+
+    // ====== Load Model ======
+    async function loadModel(baseUrl) {
+      setModelState('Loading…');
+      try {
+        const modelURL = baseUrl.replace(/\/?$/, '/') + 'model.json';
+        const metadataURL = baseUrl.replace(/\/?$/, '/') + 'metadata.json';
+        model = await tmImage.load(modelURL, metadataURL);
+        maxPredictions = model.getTotalClasses();
+        buildPredictionRows();
+        setModelState('Loaded');
+        els.led2.classList.add('on');
+      } catch (e) {
+        setModelState('Failed');
+        throw e;
+      }
+    }
+
+    // ====== Start Webcam + Loop ======
+    async function start() {
+      try {
+        setStatus('กำลังเริ่ม…');
+        if (!model) await loadModel(els.modelUrl.value || './my_model/');
+        const flip = !!els.flipToggle.checked;
+        // tmImage.Webcam: width, height, flip, facingModeOrDeviceId
+        const camArg = currentDeviceId || true; // true => auto / facingMode
+        webcam = new tmImage.Webcam(320, 320, flip, camArg);
+        await webcam.setup({ deviceId: currentDeviceId ? { exact: currentDeviceId } : undefined });
+        await webcam.play();
+        els.webcamContainer.innerHTML = '';
+        els.webcamContainer.appendChild(webcam.canvas);
+        setLive(true);
+        setStatus('Live');
+        loop();
+      } catch (e) {
+        setLive(false);
+        showError(e);
+      }
+    }
+
+    function stop() {
+      try {
+        if (animId) cancelAnimationFrame(animId);
+        animId = null;
+        if (webcam) {
+          webcam.stop();
+          els.webcamContainer.innerHTML = '';
+          webcam = null;
+        }
+        setLive(false);
+        setStatus('Stopped');
+      } catch (e) {
+        showError(e);
+      }
+    }
+
+    async function loop() {
+      if (!webcam) return;
+      webcam.update();
+      await predict();
+      animId = requestAnimationFrame(loop);
+    }
+
+    // ====== Predict ======
+    async function predict() {
+      if (!model || !webcam) return;
+      const prediction = await model.predict(webcam.canvas);
+      // sort by probability desc for Top-1
+      const sorted = [...prediction].sort((a,b)=> b.probability - a.probability);
+      const best = sorted[0];
+      els.top1.textContent = `Top-1: ${best.className} (${best.probability.toFixed(2)})`;
+
+      // update rows in original order (metadata order)
+      for (let i = 0; i < maxPredictions; i++) {
+        const p = prediction[i];
+        const row = els.labelContainer.children[i];
+        if (!row) continue;
+        row.querySelector('.pred-top').children[0].textContent = p.className;
+        row.querySelector('.pred-top').children[1].textContent = p.probability.toFixed(2);
+        row.querySelector('.bar > i').style.width = (p.probability * 100).toFixed(0) + '%';
+      }
+    }
+
+    // ====== Snapshot ======
+    function snapshot() {
+      if (!webcam) return;
+      try {
+        const dataUrl = webcam.canvas.toDataURL('image/png');
+        els.snapshot.src = dataUrl;
+        els.snapshot.classList.remove('hidden');
+      } catch (e) {
+        showError(e);
+      }
+    }
+
+    // ====== Events ======
+    els.btnStart.addEventListener('click', start);
+    els.btnStop.addEventListener('click', stop);
+    els.btnSnap.addEventListener('click', snapshot);
+    els.flipToggle.addEventListener('change', () => {
+      if (webcam) { stop(); start(); } // restart to apply flip
+    });
+    els.cameraSelect.addEventListener('change', e => {
+      currentDeviceId = e.target.value || null;
+      if (webcam) { stop(); start(); } // restart to switch camera
+    });
+
+    // Ask for permission once to get labels populated for cameras on some browsers
+    (async function boot() {
+      try {
+        await navigator.mediaDevices.getUserMedia({ video: true });
+      } catch (_) { /* ignore if blocked; user can click Start later */ }
+      await listCameras();
+    })();
+  </script>
+</body>
+</html>
